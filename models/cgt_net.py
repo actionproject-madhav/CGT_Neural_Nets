@@ -20,6 +20,7 @@ import keras
 from keras import layers, ops
 
 
+@keras.saving.register_keras_serializable(package="cgt_net")
 class BitwiseAggregator(layers.Layer):
     """
     Aggregation layer designed to represent XOR-like operations.

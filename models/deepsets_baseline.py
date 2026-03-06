@@ -15,6 +15,7 @@ import keras
 from keras import layers, ops
 
 
+@keras.saving.register_keras_serializable(package="deepsets")
 class MaskedSumPool(layers.Layer):
     """Sum pooling over the heap dimension, respecting the mask."""
 
