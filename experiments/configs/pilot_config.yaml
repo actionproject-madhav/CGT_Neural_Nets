@@ -8,25 +8,29 @@ experiment:
 
 data:
   max_pad_heaps: 6
-  train_heap_counts: [2, 3]
+  max_heap_value: 15
+  vocab_size: 16
+  train_heap_counts: [2, 3, 4]
   train_heap_range: [0, 7]
-  ood_heap_counts: [4, 5, 6]
+  ood_heap_counts: [5, 6]
   ood_size_range: [8, 15]
   train_val_test_split: [0.7, 0.15, 0.15]
   ood_sample_limit: 10000
 
 models:
   mlp:
-    hidden_units: 128
-    n_hidden: 3
-    dropout_rate: 0.2
+    embed_dim: 16
+    hidden_units: 256
+    n_hidden: 4
+    dropout_rate: 0.1
 
   deepsets:
-    phi_units: 64
-    phi_layers: 2
-    rho_units: 64
-    rho_layers: 2
-    dropout_rate: 0.2
+    embed_dim: 16
+    phi_units: 128
+    phi_layers: 3
+    rho_units: 128
+    rho_layers: 3
+    dropout_rate: 0.1
 
   cgt_net:
     embed_dim: 16
@@ -46,10 +50,10 @@ models:
     buffer_size: 10000
     batch_size: 64
     target_update_freq: 100
-    n_episodes: 50000
+    n_episodes: 20000
 
 training:
   learning_rate: 0.001
   batch_size: 256
-  max_epochs: 100
-  patience: 10
+  max_epochs: 200
+  patience: 25

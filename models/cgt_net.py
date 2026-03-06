@@ -8,9 +8,11 @@ Key design principles from CGT:
      should converge to an XOR-like operation
 
 Architecture:
-  - Subgame Encoder: shared network mapping each heap to a Grundy embedding
+  - Embedding: maps each discrete heap size to a learned vector
+  - Subgame Encoder: shared network mapping each heap embedding to a Grundy embedding
   - Auxiliary Grundy Head: per-heap Grundy value prediction (supervision signal)
-  - CGT Aggregator: learned aggregation of embeddings (bitwise structure)
+  - CGT Aggregator: learned aggregation of embeddings using sin/cos features
+    to capture the periodic (mod-2) structure of XOR
   - Outcome Head: final win/loss from aggregated embedding
 """
 
@@ -20,21 +22,20 @@ from keras import layers, ops
 
 class BitwiseAggregator(layers.Layer):
     """
-    Aggregation layer designed to be able to represent XOR-like operations.
+    Aggregation layer designed to represent XOR-like operations.
 
-    Uses a bank of binary-like features: each subgame encoder output is
-    passed through sigmoid to get soft-binary representations, then
-    aggregated in a way that allows learning parity (XOR).
-
-    The key insight: XOR can be decomposed as (a + b) mod 2 for single bits.
-    We use soft modular arithmetic via sin/cos features of the sum, which
-    naturally capture periodicity.
+    XOR can be decomposed as (a + b) mod 2 for single bits.
+    We use sin/cos features of the sum to capture this periodicity.
+    The sum of embeddings is projected, then sin/cos features extract
+    the mod-2 parity structure inherent in XOR.
     """
 
     def __init__(self, embed_dim: int = 16, **kwargs):
         super().__init__(**kwargs)
         self.embed_dim = embed_dim
-        self.project = layers.Dense(embed_dim * 2, activation="tanh")
+
+    def build(self, input_shape):
+        self.project = layers.Dense(self.embed_dim * 2, activation="tanh")
 
     def call(self, inputs):
         x, mask = inputs
@@ -51,18 +52,20 @@ class BitwiseAggregator(layers.Layer):
 
 def build_cgt_model(
     max_heaps: int = 6,
+    vocab_size: int = 16,
     embed_dim: int = 16,
     encoder_units: int = 64,
     encoder_layers: int = 2,
     max_grundy: int = 16,
     dropout_rate: float = 0.2,
 ) -> keras.Model:
-    heap_input = keras.Input(shape=(max_heaps,), name="heap_sizes")
+    heap_input = keras.Input(shape=(max_heaps,), dtype="int32", name="heap_sizes")
     mask_input = keras.Input(shape=(max_heaps,), name="mask")
 
-    # --- Subgame Encoder (shared across heaps) ---
-    x = layers.Reshape((max_heaps, 1))(heap_input)
+    # --- Embedding ---
+    x = layers.Embedding(vocab_size, embed_dim, name="heap_embed")(heap_input)
 
+    # --- Subgame Encoder (shared across heaps) ---
     for i in range(encoder_layers):
         x = layers.TimeDistributed(
             layers.Dense(encoder_units, activation="relu"),

@@ -22,8 +22,9 @@ from games.nim import compute_grundy_value, get_optimal_moves, is_winning_positi
 class PilotEvaluator:
     """Evaluates all trained models across all test sets."""
 
-    def __init__(self, results_dir: str = "results"):
+    def __init__(self, results_dir: str = "results", max_heap_value: int = 15):
         self.results_dir = results_dir
+        self.max_heap_value = max_heap_value
 
     def evaluate_supervised_model(
         self,
@@ -33,10 +34,10 @@ class PilotEvaluator:
     ) -> Dict[str, Dict[str, float]]:
         """Evaluate a supervised model on all test sets."""
         results = {}
-        is_cgt = model_name == "cgt_net"
+        is_cgt = "cgt" in model_name
 
         for ds_name, data in test_datasets.items():
-            if model_name == "mlp_baseline":
+            if "mlp" in model_name:
                 inputs = data["positions"]
             else:
                 inputs = [data["positions"], data["masks"]]
@@ -71,16 +72,16 @@ class PilotEvaluator:
         agent,
         test_datasets: Dict[str, Dict[str, np.ndarray]],
     ) -> Dict[str, Dict[str, float]]:
-        """Evaluate DQN agent on all test sets using Q-value based win/loss prediction."""
+        """Evaluate DQN agent on all test sets."""
         results = {}
 
         for ds_name, data in test_datasets.items():
             correct = 0
             total = len(data["win_loss"])
+            raw_positions = data["raw_positions"]
 
             for i in range(total):
-                n_heaps = int(data["num_heaps"][i])
-                heaps = tuple(int(x) for x in data["positions"][i, :n_heaps])
+                heaps = raw_positions[i]
                 pred = agent.predict_win_loss(heaps)
                 actual = data["win_loss"][i]
                 if (pred > 0.5) == (actual > 0.5):
@@ -98,21 +99,21 @@ class PilotEvaluator:
         max_heaps: int = 6,
     ) -> float:
         """
-        For winning positions, check if the model's top predicted action
-        leads to a Grundy-0 successor (an optimal move).
-        Supervised models predict win/loss, so we evaluate move quality
-        by checking if moving to the lowest-valued successor works.
+        For winning positions, check if the model's greedy move
+        (choose successor with lowest predicted win probability for opponent)
+        corresponds to an optimal (Grundy-0) successor.
         """
-        is_cgt = model_name == "cgt_net"
+        is_cgt = "cgt" in model_name
         optimal_count = 0
         winning_count = 0
+        raw_positions = test_data["raw_positions"]
 
         for i in range(len(test_data["win_loss"])):
             if test_data["win_loss"][i] < 0.5:
                 continue
 
-            n_heaps = int(test_data["num_heaps"][i])
-            heaps = tuple(int(x) for x in test_data["positions"][i, :n_heaps])
+            heaps = raw_positions[i]
+            n_h = len(heaps)
             opt_moves = get_optimal_moves(heaps)
 
             if not opt_moves:
@@ -122,18 +123,17 @@ class PilotEvaluator:
 
             best_move = None
             best_score = float("inf")
-            for hi in range(n_heaps):
+            for hi in range(n_h):
                 for rem in range(1, int(heaps[hi]) + 1):
                     new_heaps = list(heaps)
                     new_heaps[hi] -= rem
-                    new_heaps_t = tuple(new_heaps)
 
-                    padded = np.zeros(max_heaps, dtype=np.float32)
-                    padded[:n_heaps] = new_heaps_t
+                    padded = np.zeros(max_heaps, dtype=np.int32)
+                    padded[:n_h] = new_heaps
                     mask = np.zeros(max_heaps, dtype=np.float32)
-                    mask[:n_heaps] = 1.0
+                    mask[:n_h] = 1.0
 
-                    if model_name == "mlp_baseline":
+                    if "mlp" in model_name:
                         inp = padded[np.newaxis, :]
                     else:
                         inp = [padded[np.newaxis, :], mask[np.newaxis, :]]
@@ -192,7 +192,6 @@ class PilotEvaluator:
     def print_comparison_table(self, all_results: Dict):
         """Print a formatted comparison table of all architectures."""
         test_sets = ["test_id", "test_ood_heaps", "test_ood_sizes", "test_ood_both"]
-        headers = ["Model", "ID Acc", "OOD-Heaps", "OOD-Sizes", "OOD-Both"]
 
         print(f"\n{'='*75}")
         print("PILOT STUDY RESULTS: Win/Loss Classification Accuracy")

@@ -52,6 +52,7 @@ def run_pilot(args):
     os.makedirs(results_dir, exist_ok=True)
 
     max_pad = config["data"]["max_pad_heaps"]
+    vocab_size = config["data"]["vocab_size"]
     dqn_episodes = args.dqn_episodes or config["models"]["dqn"]["n_episodes"]
 
     start_time = time.time()
@@ -62,17 +63,34 @@ def run_pilot(args):
     print("STEP 1: Generating Datasets")
     print("=" * 60)
 
-    generator = NimDataGenerator(max_pad_heaps=max_pad, seed=42)
+    generator = NimDataGenerator(
+        max_pad_heaps=max_pad,
+        max_heap_value=config["data"]["max_heap_value"],
+        seed=42,
+    )
     datasets = generator.generate_all_datasets(
-        train_val_test_split=tuple(config["data"]["train_val_test_split"])
+        train_heap_counts=config["data"]["train_heap_counts"],
+        train_heap_range=tuple(config["data"]["train_heap_range"]),
+        ood_heap_counts=config["data"]["ood_heap_counts"],
+        ood_size_range=tuple(config["data"]["ood_size_range"]),
+        train_val_test_split=tuple(config["data"]["train_val_test_split"]),
+        ood_sample_limit=config["data"]["ood_sample_limit"],
     )
     print(generator.get_dataset_stats(datasets))
+
+    # Balance the training set via oversampling
+    datasets["train"] = generator.balance_dataset(datasets["train"])
+    print(f"\nAfter balancing: {len(datasets['train']['win_loss'])} training samples "
+          f"(Win: {datasets['train']['win_loss'].mean():.1%})")
 
     test_datasets = {
         k: v for k, v in datasets.items() if k.startswith("test")
     }
 
-    evaluator = PilotEvaluator(results_dir=results_dir)
+    evaluator = PilotEvaluator(
+        results_dir=results_dir,
+        max_heap_value=config["data"]["max_heap_value"],
+    )
 
     # ===== Step 2: MLP Baseline =====
     print("\n" + "=" * 60)
@@ -83,6 +101,8 @@ def run_pilot(args):
     mlp_trainer = SupervisedTrainer(
         model_builder=lambda: build_mlp_model(
             max_heaps=max_pad,
+            vocab_size=vocab_size,
+            embed_dim=mlp_cfg["embed_dim"],
             hidden_units=mlp_cfg["hidden_units"],
             n_hidden=mlp_cfg["n_hidden"],
             dropout_rate=mlp_cfg["dropout_rate"],
@@ -126,6 +146,8 @@ def run_pilot(args):
     ds_trainer = SupervisedTrainer(
         model_builder=lambda: build_deepsets_model(
             max_heaps=max_pad,
+            vocab_size=vocab_size,
+            embed_dim=ds_cfg["embed_dim"],
             phi_units=ds_cfg["phi_units"],
             phi_layers=ds_cfg["phi_layers"],
             rho_units=ds_cfg["rho_units"],
@@ -173,6 +195,7 @@ def run_pilot(args):
     cgt_trainer = SupervisedTrainer(
         model_builder=lambda: build_cgt_model(
             max_heaps=max_pad,
+            vocab_size=vocab_size,
             embed_dim=cgt_cfg["embed_dim"],
             encoder_units=cgt_cfg["encoder_units"],
             encoder_layers=cgt_cfg["encoder_layers"],
